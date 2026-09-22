@@ -1,0 +1,135 @@
+# 23CSE301 — Lab 05 & Lab 06 : k-Nearest Neighbours
+
+Project dataset: `ToP_250_movies_on_imdb_in_2026.csv` (IMDb Top-250, 2026).
+
+**Classification task (binary, as A3 requires):**
+
+| Class | Meaning | Count |
+|---|---|---|
+| 1 | Drama (genre list contains `Drama`) | 179 |
+| 0 | Non-Drama | 71 |
+
+**Features (10):** `startYear`, `runtimeMinutes`, `averageRating`, `numVotes`, `metascore`, `budget`, `grossWorldwide`, `num_countries`, `num_languages`, `contentRating` (categorical → label encoded).
+
+The dataset has real missing values — `budget` (24), `metascore` (18), `grossWorldwide` (4), `contentRating` (6) — so the imputation module in A1(b) does genuine work rather than being a no-op.
+
+---
+
+## Files
+
+| File | Assignment | What it is |
+|---|---|---|
+| `lab05_knn.py` | Lab 05, A1–A9 | Hand-written modular kNN. No GenAI used. |
+| `lab06_knn_genai.py` | Lab 06, A1 | GenAI-generated (vectorised NumPy) kNN. |
+| `test_knn_units.py` | Lab 06, A2 | 75 unit + functional test cases covering both labs. |
+| `lab06_comparison.py` | Lab 06, A3 | Three-way accuracy + timing benchmark. |
+
+## How to run
+
+Put all four `.py` files **and the CSV** in the same folder, then:
+
+```bash
+pip install numpy pandas scikit-learn matplotlib
+
+python3 lab05_knn.py            # Lab 05, A1–A9  (writes 2 plots)
+python3 lab06_knn_genai.py      # Lab 06, A1
+python3 -m unittest test_knn_units -v   # Lab 06, A2  (75 tests)
+python3 lab06_comparison.py     # Lab 06, A3  (writes 2 plots + 2 CSVs)
+```
+
+`lab06_knn_genai.py`, `test_knn_units.py` and `lab06_comparison.py` all import from `lab05_knn.py`, so keep the filenames as they are.
+
+---
+
+## Compliance with the coding instructions
+
+- **Modularised.** Every required functionality is its own function, grouped into labelled modules (encoding, imputation, distance, sorting, neighbours, voting, classifier, metrics).
+- **No print statements inside any function.** Every print lives under `if __name__ == "__main__":`.
+- **Descriptive variable names** and inline comments throughout.
+- **Lab 05 was written without GenAI**, as its instructions require. Lab 06 is the GenAI-assisted version, with `# [GenAI: Claude] ...` tags marking which portions the tool generated — that's the annotation A1 asks for. Edit those tags if you use a different tool for parts of it.
+
+## Lab 05 — module map (A1)
+
+| Requirement | Functions |
+|---|---|
+| (a) Encoding | `build_label_mapping`, `apply_label_mapping`, `encode_categorical` |
+| (b) Imputation | `compute_central_tendency` (mean/median/mode), `fit_imputer`, `apply_imputer` |
+| (c) Distance | `euclidean`, `manhattan`, `chebyshev`, `minkowski`, `cosine` + `DISTANCE_METRICS` registry |
+| (d) Sorting | `bubble_sort`, `insertion_sort`, `selection_sort`, `merge_sort`, `quick_sort` + `SORTING_ALGORITHMS` registry (config parameter) |
+| (e) Neighbours | `identify_neighbors` — ties broken by lower training index |
+| (f) Class assignment | `majority_vote` — ties broken by the nearest neighbour among tied classes |
+| A2 Weighted kNN | `distance_weight`, `weighted_vote` (weight = 1/d²) |
+| A7 Package | `CustomKNNClassifier.fit() / .predict() / .score()` |
+
+Five sorting algorithms are provided; the assignment asks for at least three.
+
+**Two tie-breaking mechanisms**, both required by the assignment:
+1. *Equal distances* → the `(distance, index)` tuples sort lexicographically, so the lower training index wins. Fully deterministic.
+2. *Equal vote counts* → the class owning the single closest neighbour wins.
+
+Encoding, imputation and scaling statistics are all learnt on the **training split only** and then applied to the test split, to avoid data leakage. Scaling matters a lot here: `numVotes` is ~10⁶ while `averageRating` is ~10¹, so without standardisation the vote count would dominate every distance.
+
+---
+
+## Results obtained
+
+### A8/A9 — accuracy vs k (test set, 75 patterns)
+
+| k | Custom | Sklearn | Custom weighted | Train acc (custom) |
+|---|---|---|---|---|
+| 1 | 0.6933 | 0.6933 | 0.6933 | **1.0000** |
+| 3 | 0.7333 | 0.7333 | 0.7333 | 0.8286 |
+| 5 | **0.7733** | **0.7733** | **0.7733** | 0.8286 |
+| 9 | 0.7200 | 0.7200 | 0.7200 | 0.8171 |
+| 15 | **0.7733** | **0.7733** | 0.7467 | 0.7486 |
+| 21 | 0.7333 | 0.7333 | 0.7467 | 0.7543 |
+
+Largest custom-vs-sklearn gap across the whole sweep: **0.0000**.
+
+### A3 — three-version comparison (k=5, time averaged over 10 runs)
+
+| Version | Accuracy | Precision | Recall | F-Score | Predict (ms) | Speed-up |
+|---|---|---|---|---|---|---|
+| V1 Custom (Lab 05) | 0.7733 | 0.8033 | 0.9074 | 0.8522 | 32.39 | 1.0× |
+| V2 Scikit-Learn | 0.7733 | 0.8033 | 0.9074 | 0.8522 | 1.23 | 26.4× |
+| V3 GenAI (Lab 06) | 0.7733 | 0.8033 | 0.9074 | 0.8522 | 1.42 | 22.8× |
+
+All three produce **identical labels on 100% of the test set**. Every difference between them is computational, not predictive — which is the cleanest possible validation that the hand-written version is correct.
+
+### Sorting algorithm cost inside the custom classifier
+
+| Algorithm | Predict (ms) | Accuracy |
+|---|---|---|
+| bubble | 100.92 | 0.7733 |
+| selection | 59.85 | 0.7733 |
+| insertion | 46.48 | 0.7733 |
+| merge | 35.59 | 0.7733 |
+| quick | 34.56 | 0.7733 |
+| builtin (Timsort) | 18.81 | 0.7733 |
+
+Accuracy is constant, as it should be — the sort order is the same, only the time to reach it differs. The O(n²) vs O(n log n) separation is clearly visible.
+
+### A2 — test results
+
+```
+Ran 75 tests in 0.114s
+OK
+```
+
+Coverage: encoding (TC-01…06), imputation (TC-07…13), scalar distances (TC-14…22), vectorised distances (TC-23…26), sorting (TC-27…34), neighbours and tie-breaking (TC-35…40), voting (TC-41…48), classifier API and error handling (TC-49…57), metrics (TC-58…65), scaling (TC-66…69), end-to-end pipeline on the real data (TC-70…75).
+
+---
+
+## Notes for the report discussion section
+
+Lab 05 asks you to answer four specific questions. The numbers above support these answers:
+
+**Are the classes well separated?** Only moderately. Accuracy peaks at 0.7733 against a majority-class baseline of 0.72 (54 of 75 test movies are Drama), so the features carry some signal but not much. Note the confusion matrix at k=5: TP=49, FP=12, TN=9, FN=5 — recall is high (0.907) but the model over-predicts Drama, catching only 9 of 21 Non-Drama films. Metadata like runtime and budget simply doesn't separate genre cleanly.
+
+**Behaviour as k increases.** Accuracy rises from 0.6933 at k=1 to a peak at k=5, wobbles, then decays past k≈15 as the decision boundary smooths toward the majority class.
+
+**Over-fitting / under-fitting.** k=1 gives 100% training accuracy and only 69.3% test accuracy — a 30-point gap, textbook over-fitting, because each test point is decided by a single possibly-noisy neighbour. At k=5 the gap narrows to 5.5 points (0.8286 vs 0.7733), which is the regular-fit region. As k → n the model predicts the majority class everywhere and both curves fall together: under-fitting. So over-fit happens at small k, under-fit at large k — the opposite of most models, since in kNN the *inverse* of k acts as model complexity.
+
+**Is kNN a good classifier here?** It works, but the high recall / low specificity pattern shows the class imbalance is doing a lot of the work. Worth saying so honestly in the report rather than claiming 77% is a strong result.
+
+`lab05_fit_diagnosis.png` plots the train-vs-test curves if you want the figure for this section.
